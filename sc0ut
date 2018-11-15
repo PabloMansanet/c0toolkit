@@ -1,0 +1,37 @@
+#!/bin/bash
+
+if [[ "$#" -lt 1 ]]; then
+   echo "Usage: $0 <target_ip>"
+fi
+
+echo "Just to get you started while you wait for the results:"
+echo "Top 20 ports for manual enumeration."
+nmap -sV --top-ports=20 --open $1
+
+echo "Running initial unicorn scan..."
+UNICORN=$(unicornscan -mT -v $1:a 2>/dev/null)
+
+export OPEN_PORTS=$(echo $UNICORN |grep open |sed 's/.*\[ *\([0-9]*\).*/\1/g' |tr "\n" ','| head -c -1)
+echo "Open ports are ${OPEN_PORTS}"
+if [ ! -e banner_grab.txt ] 
+then
+   echo "tcp banner grab and os detection..."
+   nmap -sV -O $1 -p $OPEN_PORTS -oN banner_grab.txt
+fi
+
+if [ ! -e vulnerabilities.txt ] 
+then
+   echo "vulnerabilities..."
+   nmap --script=vuln $1 -p $OPEN_PORTS -oN vulnerabilities.txt
+fi
+
+echo "unicorn udp..."
+UNICORN_UDP=$(unicornscan -mU -v $1:a 2>/dev/null)
+
+export OPEN_PORTS_UDP=$(echo $UNICORN_UDP |grep open |sed 's/.*\[ *\([0-9]*\).*/\1/g' |tr "\n" ','| head -c -1)
+echo "Open ports (UDP) are ${OPEN_PORTS_UDP}"
+if [ ! -e banner_grab_udp.txt ] 
+then
+   echo "udp banner grab..."
+   nmap -sU -sV $1 -p $OPEN_PORTS_UDP -oN banner_grab_udp.txt
+fi

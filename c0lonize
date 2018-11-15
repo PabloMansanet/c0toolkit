@@ -1,0 +1,49 @@
+#!/bin/bash
+
+if [ "$#" -ne 3 ]; then
+   echo "usage: $0 <rhost> <rport> <subnet>"
+   echo "example: $0 10.11.10.11 22 10.10.0.0/24"
+   echo "   * -> Requests host 10.11.10.11 at port 22 to act as a gateway for"
+   echo "        10.10.0.0/24. Requires root on both ends."
+   echo "        It's recommended to add pubkey to authorized_keys on remote"
+   echo "        system to avoid having to enter the password multiple times."
+   exit 0
+fi
+
+
+echo "Configuring remote SSHD service to allow tunneling..."
+ssh root@$1 -p $2 << 'EOF_'
+echo 1 > /proc/sys/net/ipv4/ip_forward
+cat /etc/ssh/sshd_config | grep -v PermitRootLogin |grep -v PermitTunnel > .tmp_sshd_config
+echo "PermitRootLogin yes" >> .tmp_sshd_config
+echo "PermitTunnel yes" >> .tmp_sshd_config
+mv .tmp_sshd_config /etc/ssh/sshd_config
+
+# hedging...
+systemctl restart sshd 2> /dev/null
+service sshd restart 2> /dev/null
+systemctl restart ssh 2> /dev/null
+service ssh restart 2> /dev/null
+$(which sshd) restart 2> /dev/null
+
+EOF_
+
+echo "Creating tunnel..."
+ssh -N -f root@$1 -p $2 -w any:any
+TUNNEL=$(ip link | grep tun | tail -n1 | cut -d' ' -f2 | head -c -2)
+echo "Tunnel: $TUNNEL"
+ip link set $TUNNEL up
+ip addr add 1.1.1.2/32 peer 1.1.1.1 dev $TUNNEL
+ip route add $3 via 1.1.1.1
+
+echo "Setting up route through tunnel..."
+ssh root@$1 -p $2 << 'EOF_'
+REMOTE_TUNNEL=$(ip link | grep tun | tail -n1 | cut -d' ' -f2 | head -c -2)
+echo "Tunnel: $REMOTE_TUNNEL" > /tmp/test
+ip link set $REMOTE_TUNNEL up
+ip addr add 1.1.1.1/32 peer 1.1.1.2 dev $REMOTE_TUNNEL
+arp -sD 1.1.1.1 eth0 pub
+iptables -F
+iptables -t nat -A POSTROUTING -s 1.1.1.2 -o eth0 -j MASQUERADE
+
+EOF_
