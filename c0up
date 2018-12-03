@@ -22,7 +22,7 @@ function print_usage() {
    echo ""
    echo "     -s, --smb"
    echo "            serve file through the smb service (port 445)"
-   echo "            dependencies: impacket-smbserver"
+   echo "            dependencies: smbserver.py"
    echo ""
    echo "     -w, --web <LPORT>"
    echo "            serve file through http on a specified port"
@@ -34,9 +34,9 @@ function print_usage() {
 }
 
 function smb_option() {
-   which impacket-smbserver > /dev/null 2>&1 
+   which smbserver.py > /dev/null 2>&1 
    [[ $? -gt 0 ]] || {
-      echo "The -s (--smb) option requires impacket-smbserver in your PATH"
+      echo "The -s (--smb) option requires smbserver.py in your PATH"
       echo "    * https://github.com/SecureAuthCorp/impacket"
       exit 1
    }
@@ -98,8 +98,8 @@ if [[ $SMB ]]; then
    echo " script with CTRL-C to shut down the SMB server. "
    echo ""
    echo " Starting smbserver instance... "
-   echo " * impacket-smbserver c0up $(basename ${FILE})"
-   impacket-smbserver c0up $(basename ${FILE}) > /dev/null
+   echo " * smbserver.py c0up $(basename ${FILE})"
+   smbserver.py c0up $(basename ${FILE}) > /dev/null
    exit 
 fi
 
